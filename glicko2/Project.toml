@@ -1,0 +1,8 @@
+name = "Glicko2"
+uuid = "ecfa98f5-7b5e-45c4-9867-17694c57a0ff"
+authors = ["Kari Silvennoinen <kari@kalifi.org>"]
+version = "0.1.0"
+
+[deps]
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"

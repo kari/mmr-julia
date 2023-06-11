@@ -1,18 +1,22 @@
 """
 Glicko-2 implementation in Julia
+
 For reference see http://www.glicko.net/glicko/glicko2.pdf
 """
+module Glicko2
 
 using Distributions
 
+export Player, update, expected_outcome, true_expected_outcome, ci
+
 struct Player
-    "rating estimate ´r´, Glicko default is 1500"
+    "rating estimate `r`, Glicko default is 1500"
     rating::Float64
-    "rating deviation ´RD´, Glicko default is 350"
+    "rating deviation `RD`, Glicko default is 350"
     rd::Float64
-    "player volatility ´σ´, Glicko 'default' is 0.06"
+    "player volatility `σ`, Glicko 'default' is 0.06"
     volatility::Float64
-    "player's 'true' skill for simulation purposes, can be sampled from ´N(r, RD)´"
+    "player's 'true' skill for simulation purposes, can be sampled from `N(r, RD)`"
     skill::Float64
 end
 
@@ -23,9 +27,9 @@ Player(rating, rd, skill) = Player(rating, rd, 0.06, skill)
 """
     update(player, opponents, s, 𝜏)
 
-Return updated ´player´'s ratings against ´opponents´ with outcomes ´s´ and the system parameter ´𝜏´. 
+Return updated `player`'s ratings against `opponents` with outcomes `s` (1 = win, 0.5 = tie, 0 = loss) and the system parameter `𝜏`. 
 
-Glicko-2 paper recommends ´𝜏´ is in range 0.3 - 1.2 but does not offer a default.
+Glicko-2 paper recommends `𝜏` is in range 0.3 - 1.2 but does not offer a default.
 """
 function update(player::Player, opponents::Array{Player, 1}, s::Array{<:Number, 1}, 𝜏::Float64)
     𝜇 = (player.rating - 1500)/173.7178
@@ -80,9 +84,35 @@ function update(player::Player, opponents::Array{Player, 1}, s::Array{<:Number, 
 end
 
 """
+    update(player1, player2, s, 𝜏)
+
+Return updated `player1`'s ratings against `player2` with outcome `s` and the system parameter `𝜏`. 
+
+The Glicko-2 paper assumes a tournament setting where player plays `m` games (5 - 10 games according to the original Glicko paper) in a "rating period" and the rating is only updated after those games. Many online games set `m = 1`, ie. update rating after each match.
+"""
+function update(player1::Player, player2::Player, s::Number, 𝜏::Float64)
+    return update(player1, [player2], [s], 𝜏)
+end
+
+"""
+    update(player1)
+
+Update player's rating if they do not compete during a rating period. In this case, the player’s rating and volatility parameters remain the same, but the RD increases.
+"""
+function update(player::Player)
+    𝜙 = player.rd/173.7178
+    𝜎 = player.volatility
+    𝜙′ = sqrt(𝜙^2 + 𝜎^2)
+
+    RD′ = 173.7178𝜙′
+
+    return Player(player.rating, RD′, player.volatility, player.skill)
+end
+
+"""
     expected_outcome(player1, player2)
 
-Return expected outcome of a match.
+Return expected outcome of a match based on player ratings.
 
 From original Glicko paper, http://www.glicko.net/glicko/glicko.pdf
 """
@@ -99,17 +129,22 @@ end
 
 Calculate expected outcome using "hidden" skill attribute. 
 
-Uses ´Logistic´  distribution, other option would be to use ´Normal´. ´s´ = standard deviation of the scoring system.
+Uses `Logistic`  distribution, other option would be to use `Normal`. `s` = standard deviation of the scoring system.
+
+Using `Logistic` gives higher probabilities to "improbable" events and might be more suitable for real-life scenarios.
 """
 function true_expected_outcome(player1::Player, player2::Player, s = 350)
     return cdf(Logistic(0, s), player1.skill - player2.skill)
 end
 
-# Examples/Tests
-@show update(Player(), [Player() for i = 1:10], rand(Bernoulli(), 10), 0.3) # FIXME: use Bernoulli p for each matchup from true_expected_outcome
-@show update(Player(1500, 200), [Player(1400, 30), Player(1550, 100), Player(1700, 300)], [1, 0, 0], 0.5) # Example from Glicko-2 paper, should return Player(1464, 151.52, 0.05999)
-@show expected_outcome(Player(1400, 80), Player(1500, 150)) # Example from Glicko paper, should return 0.376
-@show expected_outcome(Player(1500, 350), Player(1500, 350)) # Should return 0.5
-@show expected_outcome(Player(1400, 350), Player(1500, 350)) # Should return ~0.43
-@show true_expected_outcome(Player(1500, 350, 1500), Player(1500, 350, 1500)) # Should return 0.5
-@show true_expected_outcome(Player(1400, 80, 1400), Player(1500, 150, 1500)) # Should return ~0.42
+"""
+    ci(player, 𝛼 = 0.05)
+
+Calculate the confidence interval for player with coverage 1-`𝛼`. By default calculates the 95% confidence interval. 
+"""
+function ci(player::Player, 𝛼 = 0.05)
+    q = cquantile(Normal(0, 1), 𝛼/2)
+    return (player.rating - q*player.rd, player.rating + q*player.rd)
+end
+
+end
